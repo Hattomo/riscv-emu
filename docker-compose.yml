@@ -1,0 +1,13 @@
+version: '3.7'
+services: 
+    RISCV-dev:
+        image: hattomo/ubuntu:20.04.h3
+        #build: .
+        volumes: 
+          - "./:/riscvemu"
+        tty: true
+        # Hattomo docker virtual machine 
+        hostname: HDVM-Remu 
+        container_name: Remu
+        # stdin_open: true
+        
