@@ -1,18 +1,19 @@
 // Defalt memory size(128MB)
-pub const MEMORY_SIZE: u64= 1024 * 1024 * 128;
+pub const MEMORY_SIZE: u64 = 1024 * 1024 * 128;
+pub const REGISTER_NUMBER: usize = 32;
 
 // CPU
 // CPU does not have memory inside CPU.
 // it connent via system bus. but now, to simplify, it's OK
 pub struct Cpu{
-    pub regs:[u64;32], //register 64bit & 32 registers
+    pub regs:[u64; REGISTER_NUMBER], //register 64bit & 32 registers
     pub pc:u64, // programm counter
     pub memory:Vec<u8>,
 }
 
 impl Cpu{
     pub fn new(binary: Vec<u8>) -> Self {
-        let mut regs = [0; 32];
+        let mut regs = [0; REGISTER_NUMBER];
         // regs[2](x2) is a stack pointer
         regs[2] = MEMORY_SIZE;
 
