@@ -32,10 +32,10 @@ fn main() -> io::Result<()> {
         cpu.pc += 4;
         
         // decode & execute
-        cpu.execute(inst);//{
-        ////    true => break,
-          //  false => {}
-        //};
+        match cpu.execute(inst){
+            true => break,
+            false => {}
+        };
 
         if cpu.pc == 0 {
             break;
