@@ -32,7 +32,14 @@ fn main() -> io::Result<()> {
         cpu.pc += 4;
         
         // decode & execute
-        cpu.execute(inst);
+        cpu.execute(inst);//{
+        ////    true => break,
+          //  false => {}
+        //};
+
+        if cpu.pc == 0 {
+            break;
+        }
     }
 
     // print reg (x0 to x31)
