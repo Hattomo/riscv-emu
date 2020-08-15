@@ -29,19 +29,23 @@ fn main() -> io::Result<()> {
 
     while cpu.pc - MEMORY_BASE < cpu.codesize {
         // fetch
+        // break when error occur
         let inst = match cpu.fetch(){
             Ok(inst) => inst,
             Err(_) => break,
         };
+
         // add 4 to the programm counter
         cpu.pc += 4;
 
         // decode & execute
+        // break when error occur
         match cpu.execute(inst){
             Ok(_) => {},
             Err(_) => break,
         };
 
+        // not to infine loop
         if cpu.pc == 0 {
             break;
         }

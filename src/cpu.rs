@@ -80,14 +80,11 @@ impl Cpu{
 
         // exec 
         // wrapping_add & wrapping_sub ignore overflow
-        println!("{}:{}",opcode,funct3);
-        //println!("{}",inst);
         match opcode {
             0x03 => {
                 // imm[11:0] = inst[31:20]
                 let imm = ((inst as i32 as i64) >> 20) as u64;
                 let addr = self.regs[rs1].wrapping_add(imm);
-                println!("{}:{}:{}:{}",opcode,funct3,addr,imm);
                 match funct3 {
                     0x0 => {
                         // lb
