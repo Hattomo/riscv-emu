@@ -69,7 +69,7 @@ impl Memory {
             | ((self.memory[index + 4] as u64) << 32)
             | ((self.memory[index + 5] as u64) << 40)
             | ((self.memory[index + 6] as u64) << 48)
-            | ((self.memory[index + 2] as u64) << 56);
+            | ((self.memory[index + 7] as u64) << 56);
     }
 
     // 🍫 val & 0xff ?
