@@ -3,6 +3,56 @@ use crate::bus::*;
 // Defalt memory size(128MB)
 pub const MEMORY_SIZE: u64 = 1024 * 1024 * 128;
 pub const REGISTER_NUMBER: usize = 32;
+// CSRs 2^12
+pub const CSRS_NUMBER: usize = 4096;
+
+// CRSs
+// Machine level CSRs
+// Machine information register
+// Hardware thread ID
+pub const MHARTID: usize = 0xf14;
+// Machine trap setup
+// Machine status register
+pub const MSTATUS: usize = 0x300;
+// Machine exception delefation register
+pub const MEDELEG: usize = 0x302;
+// Machine interrupt-enable register
+pub const MIE: usize = 0x304;
+// Machine trap-handler base address.
+pub const MTVEC: usize = 0x305;
+// Machine conuter enable 
+pub const MCOUNTEREN: usize = 0x306;
+// Machine trap handling
+// Scratch register for machine trap handlers
+pub const MSCRATCH: usize = 0x340;
+// Machine exception program counter
+pub const MEPC: usize = 0x341;
+// Machine trap cause
+pub const MCAUSE: usize = 0x342;
+// Machine bad address or instruction
+pub const MTVAL: usize = 0x343;
+
+// Surpervisor-level CSRs
+// Surpervisor status register
+// Surpervisor trap setup
+pub const SSTATUS: usize = 0x100;
+// Surpervisor interrupt-enable register
+pub const SIE:usize = 0x104;
+// Surpervisor trap hander base address
+pub const STVEC: usize = 0x105;
+// Surpervisor trap handling
+// Scratch register for surpervisor trap hander
+pub const SSCRACH: usize = 0x140;
+// Surpervisor exception program counter
+pub const SEPC: usize = 0x141;
+// Surpervisor trap cause
+pub const SCAUSE: usize = 0x142;
+// Surpervisor bad address or instruction
+pub const STVAL: usize = 0x143;
+// Surpervisor interrupt pending
+pub const SIP: usize = 0x144;
+// Surpervisor address translation and protection
+pub const SATP: usize = 0x180;
 
 // The CPU mode
 pub enum Mode {
@@ -25,6 +75,10 @@ pub struct Cpu{
     pub pc:u64, 
     // System Bus
     pub bus: Bus,
+    // Control and status registers. RISC-V ISA sets 
+    // aside a 12-bit encoding space (csr[11:0]) for
+    // up to 4096 CSRs.
+    pub csrs: [u64; CSRS_NUMBER],
     // The size of binary
     pub codesize: u64,
     // Privilege mode
@@ -43,6 +97,7 @@ impl Cpu{
             regs,
             pc: MEMORY_BASE,
             bus: Bus::new(binary),
+            csrs: [0; CSRS_NUMBER],
             codesize,
             mode:Mode::Machine,
         }
@@ -51,18 +106,29 @@ impl Cpu{
     // print values in all registers (x0-x31)
     pub fn dump_registers(&self){
         let mut output = String::from("");
+        let abi = [
+            "zero", " ra ", " sp ", " gp ", " tp ", " t0 ", " t1 ", " t2 ",
+            " s0 ", " s1 ", " a0 ", " a1 ", " a2 ", " a3 ", " a4 ", " a5 ", " a6 ",
+            " a7 ", " s2 ", " s3 ", " s4 ", " s5 ", " s6 ", " s7 ", " s8 ", " s9 ",
+            "s10 ", "s11 ", " t3 ", " t4 ", " t5 ", " t6 "
+        ];
         for i in (0..32).step_by(4){
             output = format!(
                 "{}\n{}",
                 output,
-                format!("x{:02}={:>#18x} x{:02}={:>#18x} x{:02}={:>#18x} x{:02}={:>#18x}",
+                format!(
+                "x{:02}({})={:>#18x} x{:02}({})={:>#18x} x{:02}({})={:>#18x} x{:02}({})={:>#18x}",
                 i,
+                abi[i],
                 self.regs[i],
                 i + 1,
+                abi[i + 1],
                 self.regs[i + 1],
                 i + 2,
+                abi[i + 2],
                 self.regs[i + 2],
                 i + 3,
+                abi[i + 3],
                 self.regs[i + 3],
                 )
             );
@@ -70,6 +136,22 @@ impl Cpu{
         println!("{}",output);
     }
     
+    // Print values in some csrs
+    pub fn dump_csrs(&self){
+        let output = format!(
+            "{}\n{}",
+            format!(
+                "mstatus={:>#18x} mtvec={:>#18x} mepc={:>#18x} mcause={:>#18x}",
+                self.csrs[MSTATUS], self.csrs[MTVEC], self.csrs[MEPC], self.csrs[MCAUSE],
+            ),
+            format!(
+                "sstatus={:>#18x} stvec={:>#18x} sepc={:>#18x} scause={:>#18x}",
+                self.csrs[SSTATUS], self.csrs[STVEC], self.csrs[SEPC], self.csrs[SCAUSE],
+            ),
+        );
+        println!("{}", output);
+    }
+
     // Get an instruction from memory
     // | means OR in Rust
     // this is a little-endian system
@@ -474,17 +556,55 @@ impl Cpu{
                 self.pc = self.pc.wrapping_add(imm).wrapping_sub(4);
             }
             0x73 => {
+                let csr_addr = ((inst & 0xfff00000) >> 20) as usize;
                 match funct3 {
-                    0x0 => {
-                        match (rs2,funct7){
-                            (0x2,0x8) => {
-                                // sret
-                            }
-                            (0x2,0x18) => {
-                                // mret
-                            }
-                            _ => {}
-                        }
+                    0x1 => {
+                        // csrrw
+                        // atomic read/write CSR.
+                        // Atomically swaps values in the CSRs and integer registers.
+                        let t = self.csrs[csr_addr];
+                        self.csrs[csr_addr] = self.regs[rs1];
+                        self.regs[rd] = t;
+                    }
+                    0x2 => {
+                        // csrrs
+                        // atomic read and set bits in CSR.
+                        let t = self.csrs[csr_addr];
+                        self.csrs[csr_addr] = t | self.regs[rs1];
+                        self.regs[rd] = t;
+                    }
+                    0x3 => {
+                        // csrrc
+                        // atomic read and clear bits in CSR.
+                        let t = self.csrs[csr_addr];
+                        self.csrs[csr_addr] = t & (!self.regs[rs1]);
+                        self.regs[rd] = t;
+                    }
+                    0x5 => {
+                        // csrrwi	
+                        // Update the CSR using an XLEN-bit value obtained by zero-extending 
+                        // a 5-bit unsigned immediate (uimm[4:0]) field encoded in the rs1 field.
+                        let zimm = rs1 as u64;
+                        self.regs[rd] = self.csrs[csr_addr];
+                        self.csrs[csr_addr] = zimm;
+                    }
+                    0x06 => {
+                        // csrrsi
+                        // Set CSR bit using an XLEN-bit value obtained by zero-extending
+                        // a 5-bit unsigned immediate (uimm[4:0]) field encoded in the rs1 field.
+                        let zimm =rs1 as u64;
+                        let t = self.csrs[csr_addr];
+                        self.csrs[csr_addr] = t | zimm;
+                        self.regs[rd] = t;
+                    }
+                    0x07 => {
+                        // csrrci
+                        // Clear CSR bit using an XLEN-bit value obtained by zero-extending
+                        // a 5-bit unsigned immediate (uimm[4:0]) field encoded in the rs1 field.
+                        let zimm = rs1 as u64;
+                        let t = self.csrs[csr_addr];
+                        self.csrs[csr_addr] = t & (!zimm);
+                        self.regs[rd] = t;
                     }
                     _ => {}
                 }
