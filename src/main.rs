@@ -1,10 +1,13 @@
 pub mod cpu;
+pub mod bus;
+pub mod memory;
 
 use std::env;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 use cpu::*;
+use crate::bus::MEMORY_BASE;
 
 fn main() -> io::Result<()> {
     println!("Hello,RISC-V Emulator!");
@@ -21,20 +24,22 @@ fn main() -> io::Result<()> {
     let mut file = File::open(&args[1])?;
     let mut binary = Vec::new();
     file.read_to_end(&mut binary)?;
-
     // set up Cpu & set binary read from file to cpu memory
     let mut cpu = Cpu::new(binary);
 
-    while cpu.pc < cpu.memory.len() as u64 {
+    while cpu.pc - MEMORY_BASE < cpu.codesize {
         // fetch
-        let inst = cpu.fetch();
+        let inst = match cpu.fetch(){
+            Ok(inst) => inst,
+            Err(_) => break,
+        };
         // add 4 to the programm counter
         cpu.pc += 4;
-        
+
         // decode & execute
         match cpu.execute(inst){
-            true => break,
-            false => {}
+            Ok(_) => {},
+            Err(_) => break,
         };
 
         if cpu.pc == 0 {

@@ -1,3 +1,5 @@
+use crate::bus::*;
+
 // Defalt memory size(128MB)
 pub const MEMORY_SIZE: u64 = 1024 * 1024 * 128;
 pub const REGISTER_NUMBER: usize = 32;
@@ -6,38 +8,66 @@ pub const REGISTER_NUMBER: usize = 32;
 // CPU does not have memory inside CPU.
 // it connent via system bus. but now, to simplify, it's OK
 pub struct Cpu{
-    pub regs:[u64; REGISTER_NUMBER], //register 64bit & 32 registers
-    pub pc:u64, // programm counter
-    pub memory:Vec<u8>,
+    //register 64bit & 32 registers
+    pub regs:[u64; REGISTER_NUMBER], 
+    // programm counter
+    pub pc:u64, 
+    // System Bus
+    pub bus: Bus,
+    // The size of binary
+    pub codesize: u64,
 }
 
 impl Cpu{
     pub fn new(binary: Vec<u8>) -> Self {
-        let mut memory = vec![0; MEMORY_SIZE as usize];
-        memory.splice(..binary.len(), binary.iter().cloned());
         let mut regs = [0; REGISTER_NUMBER];
         // regs[2](x2) is a stack pointer
-        regs[2] = MEMORY_SIZE;
+        regs[2] = MEMORY_BASE + MEMORY_SIZE;
+
+        let codesize = binary.len() as u64;
 
         Self {
             regs,
-            pc: 0,
-            memory,
+            pc: MEMORY_BASE,
+            bus: Bus::new(binary),
+            codesize,
         }
     }
 
+    // print values in all registers (x0-x31)
+    pub fn dump_registers(&self){
+        let mut output = String::from("");
+        for i in (0..32).step_by(4){
+            output = format!(
+                "{}\n{}",
+                output,
+                format!("x{:02}={:>#18x} x{:02}={:>#18x} x{:02}={:>#18x} x{:02}={:>#18x}",
+                i,
+                self.regs[i],
+                i + 1,
+                self.regs[i + 1],
+                i + 2,
+                self.regs[i + 2],
+                i + 3,
+                self.regs[i + 3],
+                )
+            );
+        }
+        println!("{}",output);
+    }
+    
     // Get an instruction from memory
     // | means OR in Rust
     // this is a little-endian system
-    pub fn fetch(&self) -> u32{
-        return self.read32(self.pc) as u32;
+    pub fn fetch(&self) -> Result<u64,()>{
+        return self.bus.load(self.pc,32);
     }
 
     //  Return true if an error happens, otherwise false.
-    pub fn execute(&mut self, inst:u32) -> bool{
+    pub fn execute(&mut self, inst:u64) -> Result<(),()>{
         // decode 
         // get opcode,rd,rs1,rs2
-        let inst = inst as u64;
+        //let inst = inst as u64;
         let opcode = inst & 0x0000007f;
         let funct3 = (inst & 0x00007000) >> 12;
         let funct7 = (inst & 0xfe000000) >> 25;
@@ -57,7 +87,7 @@ impl Cpu{
                 // imm[11:0] = inst[31:20]
                 let imm = ((inst as i32 as i64) >> 20) as u64;
                 let addr = self.regs[rs1].wrapping_add(imm);
-                //println!("{}:{}:{}:{}",opcode,funct3,addr,imm);
+                println!("{}:{}:{}:{}",opcode,funct3,addr,imm);
                 match funct3 {
                     0x0 => {
                         // lb
@@ -66,7 +96,7 @@ impl Cpu{
                         // and sign-extends this to XLEN bits 
                         // before string it in register rd.
                         // finally store it register rd.
-                        let val = self.read8(addr);
+                        let val = self.bus.load(addr,8)?;
                         self.regs[rd] = val as i8 as i64 as u64;
                     }
                     0x1 => {
@@ -75,7 +105,7 @@ impl Cpu{
                         // and sign-extends this to XLEN bits 
                         // before string it in register rd.
                         // finally store it register rd.
-                        let val = self.read16(addr);
+                        let val = self.bus.load(addr,16)?;
                         self.regs[rd] = val as i16 as i64 as u64;
                     }
                     0x2 => {
@@ -84,14 +114,14 @@ impl Cpu{
                         // and sign-extends this to XLEN bits 
                         // before string it in register rd.
                         // finally store it register rd.
-                        let val = self.read32(addr);
+                        let val = self.bus.load(addr,32)?;
                         self.regs[rd] = val as i32 as i64 as u64;
                     }
                     0x3 => {
                         // ld
                         // Loads a 64-bit value from memory 
                         // into register rd for RV64I.
-                        let val = self.read64(addr);
+                        let val = self.bus.load(addr,64)?;
                         self.regs[rd] = val;
                     }
                     0x4 => {
@@ -100,7 +130,7 @@ impl Cpu{
                         // and zero-extends this to XLEN bits 
                         // before string it in register rd.
                         // finally store it register rd.
-                        let val = self.read8(addr);
+                        let val = self.bus.load(addr,8)?;
                         self.regs[rd] = val;
                     }
                     0x5 => {
@@ -109,7 +139,7 @@ impl Cpu{
                         // and zero-extends this to XLEN bits 
                         // before string it in register rd.
                         // finally store it register rd.
-                        let val = self.read16(addr);
+                        let val = self.bus.load(addr,16)?;
                         self.regs[rd] = val;
                     }
                     0x6 => {
@@ -118,7 +148,7 @@ impl Cpu{
                         // and zero-extends this to XLEN bits 
                         // before string it in register rd.
                         // finally store it register rd.
-                        let val = self.read32(addr);
+                        let val = self.bus.load(addr,32)?;
                         self.regs[rd] = val;
                     }
                     _ => {}
@@ -233,21 +263,21 @@ impl Cpu{
             0x23 => {
                     // imm[11:5|4:0] = inst[31:25|11:7]
                     let imm = (((inst & 0xfe000000) as i32 as i64 >> 20) as u64)
-                        | (((inst >> 7) & 0x1f) as u64);
+                        | (((inst >> 7) & 0x1f));
                     let addr = self.regs[rs1].wrapping_add(imm);
                     match funct3 {
                         // sb 
                         // Store 8-bit, values from the low bits of register rs2 to memory.
-                        0x0 => self.write8(addr,self.regs[rs2]), 
+                        0x0 => self.bus.store(addr,8,self.regs[rs2])?, 
                         // sh
                         // Store 16-bit, values from the low bits of register rs2 to memory.
-                        0x1 => self.write16(addr,self.regs[rs2]),
+                        0x1 => self.bus.store(addr,16,self.regs[rs2])?,
                         // sw
                         // Store 32-bit, values from the low bits of register rs2 to memory.
-                        0x2 => self.write32(addr,self.regs[rs2]),
+                        0x2 => self.bus.store(addr,32,self.regs[rs2])?,
                         // sd
                         // Store 64-bit, values from the low bits of register rs2 to memory.
-                        0x3 => self.write64(addr,self.regs[rs2]),
+                        0x3 => self.bus.store(addr,64,self.regs[rs2])?,
                         _ => {}
                     }
             }
@@ -432,104 +462,11 @@ impl Cpu{
 
                 self.pc = self.pc.wrapping_add(imm).wrapping_sub(4);
             }
-            _=> {
+            _ => {
                 dbg!(format!("not implemented yet: opcade {:#x}",opcode));
-                return true;
+                return Err(());
             }
         }
-        return false;
-    }
-
-
-    // read 1 bite from the littele-endian memory
-    fn read8(&self, addr:u64) -> u64 {
-        self.memory[addr as usize] as u64
-    }
-
-    // read 2 bites from the littele-endian memory
-    fn read16(&self, addr:u64) -> u64 {
-        let index = addr as usize;
-        return (self.memory[index] as u64) 
-            | ((self.memory[index + 1] as u64) << 8);
-    }
-
-    //read 4 bites from the littele-endian memory
-    fn read32(&self, addr:u64) -> u64 {
-        let index = addr as usize;
-        return (self.memory[index] as u64)
-            | ((self.memory[index + 1] as u64) << 8)
-            | ((self.memory[index + 2] as u64) << 16)
-            | ((self.memory[index + 3] as u64) << 24);
-    }
-
-    // read 8 bites from the little-endian memory
-    fn read64(&self, addr: u64) -> u64 {
-        let index = addr as usize;
-        return (self.memory[index] as u64) 
-            | ((self.memory[index + 1] as u64) << 8)
-            | ((self.memory[index + 2] as u64) << 16)
-            | ((self.memory[index + 3] as u64) << 24)
-            | ((self.memory[index + 4] as u64) << 32)
-            | ((self.memory[index + 5] as u64) << 40)
-            | ((self.memory[index + 6] as u64) << 48)
-            | ((self.memory[index + 2] as u64) << 56);
-    }
-
-    // 🍫 val & 0xff ?
-    // write 1 bite to the little-endian memory
-    fn write8(&mut self, addr:u64, val:u64){
-        let index = addr as usize;
-        self.memory[index] = val as u8;
-    }
-
-    // write 2 bites to the little-endian memory
-    fn write16(&mut self, addr:u64, val:u64){
-        let index = addr as usize;
-        self.memory[index] = (val & 0xff) as u8;
-        self.memory[index + 1] = ((val >> 8) & 0xff) as u8;
-    }
-
-    // write 4 bites to the little-endian memory
-    fn write32(&mut self, addr:u64, val:u64){
-        let index = addr as usize;
-        self.memory[index] = (val & 0xff) as u8;
-        self.memory[index + 1] = ((val >> 8) & 0xff) as u8;
-        self.memory[index + 2] = ((val >> 16) & 0xff) as u8;
-        self.memory[index + 3] = ((val >> 24) & 0xff) as u8;
-    }
-
-    // write 8 bites to the little-endian memory
-    fn write64(&mut self,addr:u64, val:u64){
-        let index = addr as usize;
-        self.memory[index] = (val & 0xff) as u8;
-        self.memory[index + 1] = ((val >> 8) & 0xff) as u8;
-        self.memory[index + 2] = ((val >> 16) & 0xff) as u8;
-        self.memory[index + 3] = ((val >> 24) & 0xff) as u8;
-        self.memory[index + 4] = ((val >> 32) & 0xff) as u8;
-        self.memory[index + 5] = ((val >> 40) & 0xff) as u8;
-        self.memory[index + 6] = ((val >> 48) & 0xff) as u8;
-        self.memory[index + 7] = ((val >> 56) & 0xff) as u8;
-    }
-
-    // print values in all registers (x0-x31)
-    pub fn dump_registers(&self){
-        let mut output = String::from("");
-        for i in (0..32).step_by(4){
-            output = format!(
-                "{}\n{}",
-                output,
-                format!("x{:02}={:>#18x} x{:02}={:>#18x} x{:02}={:>#18x} x{:02}={:>#18x}",
-                i,
-                self.regs[i],
-                i + 1,
-                self.regs[i + 1],
-                i + 2,
-                self.regs[i + 2],
-                i + 3,
-                self.regs[i + 3],
-                )
-            );
-        }
-        println!("{}",output);
+        return Ok(());
     }
 }
