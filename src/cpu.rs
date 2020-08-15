@@ -4,9 +4,20 @@ use crate::bus::*;
 pub const MEMORY_SIZE: u64 = 1024 * 1024 * 128;
 pub const REGISTER_NUMBER: usize = 32;
 
+// The CPU mode
+pub enum Mode {
+    // user mode (application)
+    User = 0b00,
+    // surpervisor mode (kernel,OS)
+    Surpervisor = 0b01,
+    // hypervisor mode
+    Hypervisor = 0b10,
+    // Everything ?
+    Machine = 0b11,
+}
+
 // CPU
-// CPU does not have memory inside CPU.
-// it connent via system bus. but now, to simplify, it's OK
+// it connent via system bus
 pub struct Cpu{
     //register 64bit & 32 registers
     pub regs:[u64; REGISTER_NUMBER], 
@@ -16,6 +27,8 @@ pub struct Cpu{
     pub bus: Bus,
     // The size of binary
     pub codesize: u64,
+    // Privilege mode
+    pub mode : Mode,
 }
 
 impl Cpu{
@@ -31,6 +44,7 @@ impl Cpu{
             pc: MEMORY_BASE,
             bus: Bus::new(binary),
             codesize,
+            mode:Mode::Machine,
         }
     }
 
@@ -458,6 +472,22 @@ impl Cpu{
                     | ((inst >> 20) & 0x7fe) as u64; // imm[10:1]
 
                 self.pc = self.pc.wrapping_add(imm).wrapping_sub(4);
+            }
+            0x73 => {
+                match funct3 {
+                    0x0 => {
+                        match (rs2,funct7){
+                            (0x2,0x8) => {
+                                // sret
+                            }
+                            (0x2,0x18) => {
+                                // mret
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
             }
             _ => {
                 dbg!(format!("not implemented yet: opcade {:#x}",opcode));

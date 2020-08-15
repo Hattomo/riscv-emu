@@ -54,5 +54,7 @@ fn main() -> io::Result<()> {
     // print reg (x0 to x31)
     cpu.dump_registers();
 
+    println!("------------------------------------------");
+    // cpu.dump_csrs();
     Ok(())
 }
