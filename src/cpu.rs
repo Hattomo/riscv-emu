@@ -374,6 +374,46 @@ impl Cpu{
                         _ => {}
                     }
             }
+            // RV64A: "A" standard extension for atmic instructions
+            // atmic instruction guarantee not interfare with other orders
+            0x2f => {
+                let funct5 = (funct7 & 0b1111100) >> 2;
+                // acquire access
+                let _aq = (funct7 & 0b0000010) >> 1;
+                // release access
+                let _rl = funct7 & 0b0000001;
+                match (funct3,funct5){
+                    (0x2,0x00) => {
+                        // amoadd.w
+                        // loads and store 32 bits data
+                        let t = self.bus.load(self.regs[rs1],32)?;
+                        self.bus.store(self.regs[rs1], 32, t.wrapping_add(self.regs[rs2]))?;
+                        self.regs[rd] = t;
+                    }
+                    (0x3,0x00) => {
+                        // amoadd.d
+                        // loads and store 64 bits data
+                        let t = self.bus.load(self.regs[rs1],64)?;
+                        self.bus.store(self.regs[rs1], 64, t.wrapping_add(self.regs[rs2]))?;
+                        self.regs[rd] = t;
+                    }
+                    (0x2,0x01) => {
+                        // amoswap.w
+                        // swap 32 bits data
+                        let t = self.bus.load(self.regs[rs1],32)?;
+                        self.bus.store(self.regs[rs1], 32, self.regs[rs2])?;
+                        self.regs[rd] = t ;
+                    }
+                    (0x3, 0x01) => {
+                        // amowap.d
+                        // swap and store 64 bits data
+                        let t = self.bus.load(self.regs[rs1],64)?;
+                        self.bus.store(self.regs[rs1], 64,self.regs[rs2])?;
+                        self.regs[rd] = t;
+                    }
+                    _ => {}
+                }
+            }
             0x33 => {
                 let shamt = ((self.regs[rs2] & 0x3f) as u64) as u32;
                 match (funct3, funct7) {
@@ -558,6 +598,71 @@ impl Cpu{
             0x73 => {
                 let csr_addr = ((inst & 0xfff00000) >> 20) as usize;
                 match funct3 {
+                    0x0 => {
+                        match (rs2, funct7){
+                            (0x2, 0x8) => {
+                                // 🍫🍫 sret
+                                // surpervisor mode to other mode
+                                // The SRET instruction returns from a supervisor-mode exception
+                                // handler. It does the following operations:
+                                // - Sets the pc to CSRs[sepc].
+                                // - Sets the privilege mode to CSRs[sstatus].SPP.
+                                // - Sets CSRs[sstatus].SIE to CSRs[sstatus].SPIE.
+                                // - Sets CSRs[sstatus].SPIE to 1.
+                                // - Sets CSRs[sstatus].SPP to 0.
+                                self.pc = self.csrs[SEPC];
+                                // When the SRET instruction is executed to return from the trap
+                                // handler, the privilege level is set to user mode if the SPP
+                                // bit is 0, or supervisor mode if the SPP bit is 1. The SPP bit
+                                // is the 8th of the SSTATUS csr.
+                                self.mode = match (self.csrs[SSTATUS] >> 8) & 1 {
+                                    1 => Mode::Surpervisor,
+                                    _ => Mode::User,
+                                };
+                                // The SPIE bit is the 5th and the SIE bit is the 1st of the
+                                // SSTATUS csr.
+                                self.csrs[SSTATUS] = if ((self.csrs[SSTATUS] >> 5) & 1) == 1 {
+                                    self.csrs[SSTATUS] | (1 << 1)
+                                }else{
+                                    self.csrs[SSTATUS] & !(1 << 1)
+                                };
+                                self.csrs[SSTATUS] = self.csrs[SSTATUS] | (1 << 5);
+                                self.csrs[SSTATUS] = self.csrs[SSTATUS] & !(1 << 8);
+                            }
+                            (0x2, 0x18) => {
+                                // 🍫 mret
+                                // machine mode to other mode
+                                // The MRET instruction returns from a machine-mode exception
+                                // handler. It does the following operations:
+                                // - Sets the pc to CSRs[mepc].
+                                // - Sets the privilege mode to CSRs[mstatus].MPP.
+                                // - Sets CSRs[mstatus].MIE to CSRs[mstatus].MPIE.
+                                // - Sets CSRs[mstatus].MPIE to 1.
+                                // - Sets CSRs[mstatus].MPP to 0.
+                                self.pc = self.csrs[MEPC];
+                                // MPP is two bits wide at [11..12] of the MSTATUS csr.
+                                self.mode = match (self.csrs[MSTATUS] >> 11) & 0b11 {
+                                    2 => Mode::Machine,
+                                    1 => Mode::Surpervisor,
+                                    _ => Mode::User,
+                                };
+                                // The MPIE bit is the 7th and the MIE bit is the 3rd of the
+                                // MSTATUS csr. 
+                                self.csrs[MSTATUS] = if((self.csrs[MSTATUS] >> 7) & 1) == 1 {
+                                    self.csrs[MSTATUS] | (1 << 3)
+                                }else{
+                                    self.csrs[MSTATUS] & !(1 << 3)
+                                };
+                                self.csrs[MSTATUS] = self.csrs[MSTATUS] | (1 << 7);
+                                self.csrs[MSTATUS] = self.csrs[MSTATUS] & !(0b11 << 11);
+                            }
+                            (_,0x9) => {
+                                // sfence.vma
+                                // Do nothing
+                            }
+                            _ => {}
+                        }
+                    }
                     0x1 => {
                         // csrrw
                         // atomic read/write CSR.
