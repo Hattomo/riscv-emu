@@ -1,13 +1,15 @@
 pub mod cpu;
 pub mod bus;
 pub mod memory;
+pub mod trap;
 
 use std::env;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 use cpu::*;
-use crate::bus::MEMORY_BASE;
+
+use crate::trap::*;
 
 fn main() -> io::Result<()> {
     println!("Hello,RISC-V Emulator!");
@@ -27,12 +29,16 @@ fn main() -> io::Result<()> {
     // set up Cpu & set binary read from file to cpu memory
     let mut cpu = Cpu::new(binary);
 
-    while cpu.pc - MEMORY_BASE < cpu.codesize {
+    loop {
         // fetch
         // break when error occur
         let inst = match cpu.fetch(){
             Ok(inst) => inst,
-            Err(_) => break,
+            Err(exception) => {
+                exception.take_trap(&mut cpu);
+                println!("exception: {:?}", exception);
+                break;
+            },
         };
 
         // add 4 to the programm counter
@@ -42,7 +48,11 @@ fn main() -> io::Result<()> {
         // break when error occur
         match cpu.execute(inst){
             Ok(_) => {},
-            Err(_) => break,
+            Err(exception) => {
+                exception.take_trap(&mut cpu);
+                println!("exception: {:?}", exception);
+                break;
+            },
         };
 
         // not to infine loop

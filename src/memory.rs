@@ -1,4 +1,5 @@
 use crate::bus::*;
+use crate::trap::*;
 
 /// Default memory size (128MB).
 pub const MEMORY_SIZE: u64 = 1024 * 1024 * 128;
@@ -8,23 +9,23 @@ pub struct Memory {
 }
 
 impl Device for Memory {
-    fn load(&self, addr:u64, size: u64) -> Result<u64, ()>{
+    fn load(&self, addr:u64, size: u64) -> Result<u64, Exception>{
         match size {
             8 => Ok(self.load8(addr)),
             16 => Ok(self.load16(addr)),
             32 => Ok(self.load32(addr)),
             64 => Ok(self.load64(addr)),
-            _ => Err(()),
+            _ => Err(Exception::LoadAccessFault),
         }
     }
 
-    fn store(&mut self,addr: u64, size:u64, value: u64) -> Result<(),()> {
+    fn store(&mut self,addr: u64, size:u64, value: u64) -> Result<(),Exception> {
         match size {
             8 => Ok(self.store8(addr,value)),
             16 => Ok(self.store16(addr,value)),
             32 => Ok(self.store32(addr,value)),
             64 => Ok(self.store64(addr,value)),
-            _ => Err(()),
+            _ => Err(Exception::StoreAMOAccessFault),
         }
     }
 }

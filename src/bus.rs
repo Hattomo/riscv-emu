@@ -1,12 +1,13 @@
 use crate::memory::*;
+use crate::trap::*;
 
 // The address which memory status.
 pub const MEMORY_BASE: u64 = 0x8000_0000;
 
 // trait is like imterface
 pub trait Device {
-    fn load(&self, addr:u64,size: u64) -> Result<u64, ()>;
-    fn store(&mut self,addr: u64,size:u64,value:u64) -> Result<(),()>;
+    fn load(&self, addr:u64,size: u64) -> Result<u64, Exception>;
+    fn store(&mut self,addr: u64,size:u64,value:u64) -> Result<(),Exception>;
 }
 
 // The system bus
@@ -21,17 +22,17 @@ impl Bus {
         }
     }
 
-    pub fn load(&self, addr:u64,size:u64) -> Result<u64,()> {
+    pub fn load(&self, addr:u64,size:u64) -> Result<u64,Exception> {
         if MEMORY_BASE <= addr {
             return self.memory.load(addr,size);
         }
-        Err(())
+        Err(Exception::LoadAccessFault)
     }
 
-    pub fn store(&mut self,addr:u64,size:u64,value:u64) -> Result<(),()> {
+    pub fn store(&mut self,addr:u64,size:u64,value:u64) -> Result<(),Exception> {
         if MEMORY_BASE <= addr {
             return self.memory.store(addr,size,value);
         }
-        Err(())
+        Err(Exception::StoreAMOAccessFault)
     }
 }

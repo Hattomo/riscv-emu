@@ -1,4 +1,5 @@
 use crate::bus::*;
+use crate::trap::*;
 
 // Defalt memory size(128MB)
 pub const MEMORY_SIZE: u64 = 1024 * 1024 * 128;
@@ -55,13 +56,14 @@ pub const SIP: usize = 0x144;
 pub const SATP: usize = 0x180;
 
 // The CPU mode
+#[derive(Debug, PartialEq, PartialOrd, Eq, Copy, Clone)]
 pub enum Mode {
     // user mode (application)
     User = 0b00,
     // surpervisor mode (kernel,OS)
     Surpervisor = 0b01,
-    // hypervisor mode
-    Hypervisor = 0b10,
+    // hypervisor mode (not now)
+    // Hypervisor = 0b10,
     // Everything ?
     Machine = 0b11,
 }
@@ -79,8 +81,6 @@ pub struct Cpu{
     // aside a 12-bit encoding space (csr[11:0]) for
     // up to 4096 CSRs.
     pub csrs: [u64; CSRS_NUMBER],
-    // The size of binary
-    pub codesize: u64,
     // Privilege mode
     pub mode : Mode,
 }
@@ -91,14 +91,11 @@ impl Cpu{
         // regs[2](x2) is a stack pointer
         regs[2] = MEMORY_BASE + MEMORY_SIZE;
 
-        let codesize = binary.len() as u64;
-
         Self {
             regs,
             pc: MEMORY_BASE,
             bus: Bus::new(binary),
             csrs: [0; CSRS_NUMBER],
-            codesize,
             mode:Mode::Machine,
         }
     }
@@ -155,12 +152,15 @@ impl Cpu{
     // Get an instruction from memory
     // | means OR in Rust
     // this is a little-endian system
-    pub fn fetch(&self) -> Result<u64,()>{
-        return self.bus.load(self.pc,32);
+    pub fn fetch(&self) -> Result<u64,Exception>{
+        match self.bus.load(self.pc,32){
+            Ok(inst) => Ok(inst),
+            Err(_e) => Err(Exception::InstructionAccessFault)
+        }
     }
 
     //  Return true if an error happens, otherwise false.
-    pub fn execute(&mut self, inst:u64) -> Result<(),()>{
+    pub fn execute(&mut self, inst:u64) -> Result<(),Exception>{
         // decode 
         // get opcode,rd,rs1,rs2
         //let inst = inst as u64;
@@ -170,6 +170,8 @@ impl Cpu{
         let rd = ((inst & 0x00000f80) >> 7 ) as usize;
         let rs1 = ((inst & 0x000f8000) >> 15 ) as usize;
         let rs2 = ((inst & 0x01f00000) >> 20 ) as usize;
+
+        println!("{}",opcode);
 
         // regs[0](x0) is always 0 (hardwired)
         self.regs[0] = 0;
@@ -244,6 +246,14 @@ impl Cpu{
                         let val = self.bus.load(addr,32)?;
                         self.regs[rd] = val;
                     }
+                    _ => {}
+                }
+            }
+            0x0f => {
+                // A fence instruction does nothing because this emulator executes an
+                // instruction sequentially on a single thread.
+                match funct3 {
+                    0x0 => {} // fence
                     _ => {}
                 }
             }
@@ -600,8 +610,31 @@ impl Cpu{
                 match funct3 {
                     0x0 => {
                         match (rs2, funct7){
+                            (0x0, 0x0) => {
+                                // ecall 
+                                // Makes a request of the execution enxironment 
+                                // by raising an environment call exception
+                                match self.mode {
+                                    Mode::User => {
+                                        return Err(Exception::EnvironmentCallFromUMode);
+                                    }
+                                    Mode::Surpervisor => {
+                                        return Err(Exception::EnvironmentCallFromSMode);
+                                    }
+                                    Mode::Machine => {
+                                        return Err(Exception::EnvironmentCallFromMMode)
+                                    }
+                                } 
+                            }
+                            (0x1, 0x0) => {
+                                // ebreak
+                                // Makes a request of the debugger 
+                                // by raising a Breakpoint exception
+                                return Err(Exception::Breakpoint);
+                            }
                             (0x2, 0x8) => {
                                 // 🍫🍫 sret
+                                // * trap ment both exception and interruption  
                                 // surpervisor mode to other mode
                                 // The SRET instruction returns from a supervisor-mode exception
                                 // handler. It does the following operations:
@@ -716,7 +749,7 @@ impl Cpu{
             }
             _ => {
                 dbg!(format!("not implemented yet: opcade {:#x}",opcode));
-                return Err(());
+                return Err(Exception::IllegalInstruction);
             }
         }
         return Ok(());
