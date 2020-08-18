@@ -2,6 +2,9 @@ pub mod cpu;
 pub mod bus;
 pub mod memory;
 pub mod trap;
+pub mod clint;
+pub mod plic;
+pub mod uart;
 
 use std::env;
 use std::fs::File;

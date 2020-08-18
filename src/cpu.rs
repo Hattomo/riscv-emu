@@ -152,7 +152,7 @@ impl Cpu{
     // Get an instruction from memory
     // | means OR in Rust
     // this is a little-endian system
-    pub fn fetch(&self) -> Result<u64,Exception>{
+    pub fn fetch(&mut self) -> Result<u64,Exception>{
         match self.bus.load(self.pc,32){
             Ok(inst) => Ok(inst),
             Err(_e) => Err(Exception::InstructionAccessFault)

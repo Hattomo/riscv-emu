@@ -4,12 +4,13 @@ use crate::trap::*;
 /// Default memory size (128MB).
 pub const MEMORY_SIZE: u64 = 1024 * 1024 * 128;
 
+#[derive(Debug)]
 pub struct Memory {
     pub memory : Vec<u8>,
 }
 
 impl Device for Memory {
-    fn load(&self, addr:u64, size: u64) -> Result<u64, Exception>{
+    fn load(&mut self, addr:u64, size: u64) -> Result<u64, Exception>{
         match size {
             8 => Ok(self.load8(addr)),
             16 => Ok(self.load16(addr)),
