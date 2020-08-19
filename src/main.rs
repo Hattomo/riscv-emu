@@ -58,6 +58,11 @@ fn main() -> io::Result<()> {
             },
         };
 
+        match cpu.check_pending_interrupt() {
+            Some(interrupt) => interrupt.take_trap(&mut cpu),
+            None => {}
+        }
+
         // not to infine loop
         if cpu.pc == 0 {
             break;

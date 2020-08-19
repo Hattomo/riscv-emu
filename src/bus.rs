@@ -3,6 +3,7 @@ use crate::trap::*;
 use crate::plic::*;
 use crate::clint::*;
 use crate::uart::*;
+use crate::virtio::*;
 
 // The address which the core-local interruptor (CLINT) starts. 
 // It contains the timer and generates per-hart software 
@@ -22,6 +23,11 @@ pub const UART_BASE: u64 = 0x1000_0000;
 /// The size of UART.
 pub const UART_SIZE: u64 = 0x100;
 
+// The address which virtio starts
+pub const VIRTIO_BASE: u64 = 0x1000_1000;
+// The size of virtio
+pub const VIRTIO_SIZE: u64 = 0x1000;
+
 /// The address which memory starts, same as QEMU virt machine.
 pub const MEMORY_BASE: u64 = 0x8000_0000;
 
@@ -35,7 +41,8 @@ pub trait Device {
 pub struct Bus {
     clint: Clint,
     plic: Plic,
-    uart: Uart,
+    pub uart: Uart,
+    pub virtio: Virtio,
     memory: Memory,
 }
 
@@ -46,6 +53,7 @@ impl Bus {
             clint: Clint::new(),
             plic: Plic::new(),
             uart: Uart::new(),
+            virtio: Virtio::new(disk_image),
         }
     }
 
@@ -58,6 +66,9 @@ impl Bus {
         }
         if UART_BASE <= addr && addr < UART_BASE + UART_SIZE {
             return self.uart.load(addr, size);
+        }
+        if VIRTIO_BASE <= addr && addr < VIRTIO_BASE + VIRTIO_SIZE {
+            return self.virtio.load(addr, size);
         }
         if MEMORY_BASE <= addr {
             return self.memory.load(addr,size);
@@ -75,6 +86,9 @@ impl Bus {
         }
         if UART_BASE <= addr && addr < UART_BASE + UART_SIZE {
             return self.uart.store(addr, size, value);
+        }
+        if VIRTIO_BASE <= addr && addr < VIRTIO_BASE + VIRTIO_SIZE {
+            return self.virtio.store(addr, size, value);
         }
         if MEMORY_BASE <= addr {
             return self.memory.store(addr,size,value);
